@@ -140,7 +140,18 @@ export default function TicketSelectionPage() {
 
   return (
     <div className="relative h-screen overflow-hidden">
-      {/* Header */}
+      {/* Seatmap - Full screen background */}
+      <div className="fixed inset-0">
+        <InteractiveSeatMap
+          event={event}
+          selectedSeatIds={selectedSeatIds}
+          onSeatClick={handleSeatClick}
+          onSectionChange={handleSectionChange}
+          rightPanelWidth={384} // w-96 = 384px
+        />
+      </div>
+
+      {/* Header - Floating overlay */}
       <div className="absolute top-4 left-4 z-30 bg-white border-2 border-gray-300 p-4 shadow-lg">
         <Link
           href={`/event/${eventId}`}
@@ -149,16 +160,6 @@ export default function TicketSelectionPage() {
           ← Back to event
         </Link>
         <h1 className="text-xl font-bold text-gray-900">{event.title}</h1>
-      </div>
-
-      {/* Seatmap - Full screen on left, with margin for panel */}
-      <div className="h-screen pr-96">
-        <InteractiveSeatMap
-          event={event}
-          selectedSeatIds={selectedSeatIds}
-          onSeatClick={handleSeatClick}
-          onSectionChange={handleSectionChange}
-        />
       </div>
 
       {/* Floating Ticket Panel - Fixed on right */}

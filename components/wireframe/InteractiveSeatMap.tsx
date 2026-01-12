@@ -8,6 +8,7 @@ interface InteractiveSeatMapProps {
   selectedSeatIds: string[];
   onSeatClick: (sectionId: string, row: string, seat: string) => void;
   onSectionChange?: (sectionId: string | null) => void;
+  rightPanelWidth?: number; // Width of the right panel to avoid overlap (default 384px)
 }
 
 type ZoomLevel = 'sections' | 'seats';
@@ -17,6 +18,7 @@ export default function InteractiveSeatMap({
   selectedSeatIds,
   onSeatClick,
   onSectionChange,
+  rightPanelWidth = 384,
 }: InteractiveSeatMapProps) {
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('sections');
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -25,6 +27,7 @@ export default function InteractiveSeatMap({
   const canvasRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [viewportWidth, setViewportWidth] = useState(1200);
 
   const getSeatId = (sectionId: string, row: string, seat: string) => {
     return `${sectionId}-${row}-${seat}`;
@@ -76,9 +79,14 @@ export default function InteractiveSeatMap({
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
       if (isDragging && zoomLevel === 'seats') {
+        const newPanX = e.clientX - dragStart.x;
+        const newPanY = e.clientY - dragStart.y;
+        
+        // Constrain panning - prevent moving content to the right (under panel)
+        // Only allow panning left/up/down
         setPan({
-          x: e.clientX - dragStart.x,
-          y: e.clientY - dragStart.y,
+          x: Math.min(newPanX, 0), // Can't pan right past x=0
+          y: newPanY,
         });
       }
     },
@@ -88,6 +96,17 @@ export default function InteractiveSeatMap({
   const handleMouseUp = () => {
     setIsDragging(false);
   };
+
+  // Track viewport width for responsive layout
+  useEffect(() => {
+    const updateViewport = () => {
+      setViewportWidth(window.innerWidth);
+    };
+    
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
 
   useEffect(() => {
     if (isDragging) {
@@ -247,21 +266,40 @@ export default function InteractiveSeatMap({
     const seatSize = 24;
     const rowSpacing = 30;
     const seatSpacing = 28;
+    
+    // Calculate left viewport width (full width minus right panel)
+    const leftViewportWidth = viewportWidth - rightPanelWidth;
 
     return (
       <div
         className="relative overflow-hidden"
-        style={{ width: '100%', height: '100%', minHeight: '600px' }}
+        style={{ 
+          width: '100%', 
+          height: '100%', 
+          minHeight: '600px',
+        }}
         onMouseDown={handleMouseDown}
       >
+        {/* Left viewport container - constrains seat display to left side */}
         <div
           className="absolute"
           style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-            transformOrigin: 'center center',
-            transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+            left: 0,
+            top: 0,
+            width: `${leftViewportWidth}px`,
+            height: '100%',
+            overflow: 'hidden',
           }}
         >
+          {/* Constrain panning to prevent seats from going under the panel */}
+          <div
+            className="absolute"
+            style={{
+              transform: `translate(${Math.min(pan.x, 0)}px, ${pan.y}px) scale(${scale})`,
+              transformOrigin: 'left center',
+              transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+            }}
+          >
           {/* Section Header */}
           <div className="mb-4 text-center">
             <button
@@ -311,6 +349,7 @@ export default function InteractiveSeatMap({
               </div>
             ))}
           </div>
+          </div>
         </div>
       </div>
     );
@@ -319,8 +358,8 @@ export default function InteractiveSeatMap({
   return (
     <div
       ref={canvasRef}
-      className="relative bg-gray-100 border-2 border-gray-300 overflow-hidden"
-      style={{ width: '100%', minHeight: '600px' }}
+      className="fixed inset-0 bg-gray-100 overflow-hidden"
+      style={{ width: '100%', height: '100vh' }}
     >
       {/* Zoom Controls */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 border-2 border-gray-300 bg-white">
