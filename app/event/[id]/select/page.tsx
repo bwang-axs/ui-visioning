@@ -5,8 +5,8 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { mockEvents } from '@/lib/data/mockEvents';
 import { mockTickets } from '@/lib/data/mockTickets';
-import SeatMap from '@/components/wireframe/SeatMap';
-import TicketList from '@/components/wireframe/TicketList';
+import InteractiveSeatMap from '@/components/wireframe/InteractiveSeatMap';
+import TicketPanel from '@/components/wireframe/TicketPanel';
 import { Ticket } from '@/lib/types';
 
 export default function TicketSelectionPage() {
@@ -19,18 +19,46 @@ export default function TicketSelectionPage() {
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [availableTickets, setAvailableTickets] = useState<Ticket[]>([]);
   const [quantity, setQuantity] = useState(1);
+  const [currentSectionId, setCurrentSectionId] = useState<string | null>(null);
 
+  // Initialize tickets based on current section or all tickets
   useEffect(() => {
     if (!event) return;
 
-    // Get tickets for seats that match the selected seats
+    let tickets: Ticket[];
+
+    if (currentSectionId) {
+      // Show tickets for the current section
+      const section = event.sections.find((s) => s.id === currentSectionId);
+      if (section) {
+        tickets = mockTickets.filter(
+          (ticket) =>
+            ticket.eventId === eventId && ticket.section === section.name
+        );
+      } else {
+        tickets = [];
+      }
+    } else {
+      // Show all tickets for the event
+      tickets = mockTickets.filter((ticket) => ticket.eventId === eventId);
+    }
+
+    setAvailableTickets(tickets);
+  }, [currentSectionId, eventId, event]);
+
+  // Update selected tickets when seats are clicked
+  useEffect(() => {
+    if (!event || selectedSeatIds.length === 0) return;
+
     const tickets = mockTickets.filter((ticket) => {
       return (
         ticket.eventId === eventId &&
         selectedSeatIds.some((seatId) => {
           const [sectionId, row, seat] = seatId.split('-');
+          const section = event.sections.find((s) => s.id === sectionId);
           return (
-            ticket.section.toLowerCase().includes(sectionId.toLowerCase()) &&
+            section &&
+            ticket.section === section.name &&
             ticket.row === row &&
             ticket.seat === seat
           );
@@ -38,7 +66,18 @@ export default function TicketSelectionPage() {
       );
     });
 
-    setAvailableTickets(tickets);
+    // Update available tickets to include selected seats
+    setAvailableTickets((prev) => {
+      const newTickets = [...prev];
+      tickets.forEach((ticket) => {
+        if (!newTickets.find((t) => t.id === ticket.id)) {
+          newTickets.push(ticket);
+        }
+      });
+      return newTickets;
+    });
+
+    // Auto-select first ticket if none selected
     if (tickets.length > 0 && selectedTicketIds.length === 0) {
       setSelectedTicketIds([tickets[0].id]);
     }
@@ -63,6 +102,13 @@ export default function TicketSelectionPage() {
         return [ticketId];
       }
     });
+  };
+
+  const handleSectionChange = (sectionId: string | null) => {
+    setCurrentSectionId(sectionId);
+    // Clear selections when changing sections
+    setSelectedSeatIds([]);
+    setSelectedTicketIds([]);
   };
 
   const handleContinue = () => {
@@ -92,58 +138,40 @@ export default function TicketSelectionPage() {
     );
   }
 
-  const selectedTickets = availableTickets.filter((t) =>
-    selectedTicketIds.includes(t.id)
-  );
-  const totalPrice =
-    selectedTickets.length > 0 ? selectedTickets[0].price * quantity : 0;
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-6">
+    <div className="relative h-screen overflow-hidden">
+      {/* Header */}
+      <div className="absolute top-4 left-4 z-30 bg-white border-2 border-gray-300 p-4 shadow-lg">
         <Link
           href={`/event/${eventId}`}
-          className="text-sm text-gray-600 hover:text-gray-900 mb-4 inline-block"
+          className="text-sm text-gray-600 hover:text-gray-900 mb-2 inline-block"
         >
           ← Back to event
         </Link>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Select Tickets - {event.title}
-        </h1>
+        <h1 className="text-xl font-bold text-gray-900">{event.title}</h1>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Seatmap */}
-        <div className="lg:col-span-2">
-          <SeatMap
-            event={event}
-            selectedSeatIds={selectedSeatIds}
-            onSeatClick={handleSeatClick}
-          />
-        </div>
-
-        {/* Ticket List */}
-        <div>
-          <TicketList
-            tickets={availableTickets}
-            selectedTicketIds={selectedTicketIds}
-            onSelectTicket={handleSelectTicket}
-            quantity={quantity}
-            onQuantityChange={setQuantity}
-          />
-
-          {selectedTicketIds.length > 0 && (
-            <div className="mt-4">
-              <button
-                onClick={handleContinue}
-                className="w-full px-6 py-4 bg-gray-900 text-white border-2 border-gray-900 hover:bg-gray-700 transition-colors text-lg font-semibold"
-              >
-                Continue to Checkout
-              </button>
-            </div>
-          )}
-        </div>
+      {/* Seatmap - Full screen on left, with margin for panel */}
+      <div className="h-screen pr-96">
+        <InteractiveSeatMap
+          event={event}
+          selectedSeatIds={selectedSeatIds}
+          onSeatClick={handleSeatClick}
+          onSectionChange={handleSectionChange}
+        />
       </div>
+
+      {/* Floating Ticket Panel - Fixed on right */}
+      <TicketPanel
+        eventId={eventId}
+        tickets={availableTickets}
+        selectedTicketIds={selectedTicketIds}
+        onSelectTicket={handleSelectTicket}
+        quantity={quantity}
+        onQuantityChange={setQuantity}
+        currentSectionId={currentSectionId}
+        onContinue={handleContinue}
+      />
     </div>
   );
 }
