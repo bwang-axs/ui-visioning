@@ -6,13 +6,14 @@ import { mockUser } from '@/lib/data/mockUsers';
 import { mockTickets } from '@/lib/data/mockTickets';
 
 interface AccountEventPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function AccountEventPage({ params }: AccountEventPageProps) {
-  const event = mockEvents.find((e) => e.id === params.id);
+export default async function AccountEventPage({ params }: AccountEventPageProps) {
+  const { id } = await params;
+  const event = mockEvents.find((e) => e.id === id);
 
   if (!event) {
     notFound();
@@ -172,7 +173,7 @@ export default function AccountEventPage({ params }: AccountEventPageProps) {
   );
 }
 
-export function generateStaticParams() {
+export async function generateStaticParams() {
   return mockUser.purchases.map((purchase) => ({
     id: purchase.eventId,
   }));

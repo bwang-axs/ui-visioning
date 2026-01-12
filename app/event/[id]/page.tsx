@@ -4,13 +4,14 @@ import { mockEvents } from '@/lib/data/mockEvents';
 import { mockArtists } from '@/lib/data/mockArtists';
 
 interface EventPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function EventPage({ params }: EventPageProps) {
-  const event = mockEvents.find((e) => e.id === params.id);
+export default async function EventPage({ params }: EventPageProps) {
+  const { id } = await params;
+  const event = mockEvents.find((e) => e.id === id);
 
   if (!event) {
     notFound();
@@ -156,7 +157,7 @@ export default function EventPage({ params }: EventPageProps) {
   );
 }
 
-export function generateStaticParams() {
+export async function generateStaticParams() {
   return mockEvents.map((event) => ({
     id: event.id,
   }));

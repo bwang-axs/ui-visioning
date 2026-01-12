@@ -5,13 +5,14 @@ import { mockEvents } from '@/lib/data/mockEvents';
 import EventCard from '@/components/wireframe/EventCard';
 
 interface ArtistPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function ArtistPage({ params }: ArtistPageProps) {
-  const artist = mockArtists.find((a) => a.id === params.id);
+export default async function ArtistPage({ params }: ArtistPageProps) {
+  const { id } = await params;
+  const artist = mockArtists.find((a) => a.id === id);
 
   if (!artist) {
     notFound();
@@ -51,7 +52,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   );
 }
 
-export function generateStaticParams() {
+export async function generateStaticParams() {
   return mockArtists.map((artist) => ({
     id: artist.id,
   }));
