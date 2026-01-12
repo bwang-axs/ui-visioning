@@ -22,13 +22,12 @@ export default function EventCard({ event }: EventCardProps) {
   });
 
   return (
-    <div className="border-2 border-gray-300 p-4 hover:border-gray-500 transition-colors">
-      <Link href={`/event/${event.id}`} className="block space-y-2">
+    <div className="border-2 border-gray-300 p-4 flex flex-col">
+      <div className="space-y-2 flex-1">
         <h3 className="text-lg font-semibold text-gray-900">{event.title}</h3>
         {artist && (
           <Link
             href={`/artist/${artist.id}`}
-            onClick={(e) => e.stopPropagation()}
             className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
           >
             {artist.name}
@@ -44,7 +43,23 @@ export default function EventCard({ event }: EventCardProps) {
           </span>
         )}
         <p className="text-sm text-gray-700 line-clamp-2">{event.description}</p>
-      </Link>
+      </div>
+      
+      {/* Action Buttons */}
+      <div className="mt-4 pt-4 border-t-2 border-gray-300 flex gap-2">
+        <Link
+          href={`/event/${event.id}`}
+          className="flex-1 px-4 py-2 border-2 border-gray-300 hover:border-gray-500 text-center text-sm font-medium transition-colors"
+        >
+          View Details
+        </Link>
+        <Link
+          href={`/event/${event.id}/select`}
+          className="flex-1 px-4 py-2 border-2 border-gray-900 bg-gray-900 text-white hover:bg-gray-700 text-center text-sm font-medium transition-colors"
+        >
+          Get Tickets
+        </Link>
+      </div>
     </div>
   );
 }
