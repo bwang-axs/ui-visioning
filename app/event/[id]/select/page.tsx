@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { mockEvents } from '@/lib/data/mockEvents';
 import { mockTickets } from '@/lib/data/mockTickets';
 import InteractiveSeatMap from '@/components/wireframe/InteractiveSeatMap';
+import AutoSeatMap from '@/components/wireframe/AutoSeatMap';
 import TicketPanel from '@/components/wireframe/TicketPanel';
 import { Ticket } from '@/lib/types';
 
@@ -138,17 +139,29 @@ export default function TicketSelectionPage() {
     );
   }
 
+  // Use AutoSeatMap for event-6 (auto-generated seatmap demo)
+  // For other events, keep using InteractiveSeatMap
+  const useAutoSeatMap = eventId === 'event-6';
+
   return (
     <div className="relative h-screen overflow-hidden">
       {/* Seatmap - Full screen background */}
       <div className="fixed inset-0">
-        <InteractiveSeatMap
-          event={event}
-          selectedSeatIds={selectedSeatIds}
-          onSeatClick={handleSeatClick}
-          onSectionChange={handleSectionChange}
-          rightPanelWidth={384} // w-96 = 384px
-        />
+        {useAutoSeatMap ? (
+          <AutoSeatMap
+            event={event}
+            selectedSeatIds={selectedSeatIds}
+            onSeatClick={handleSeatClick}
+          />
+        ) : (
+          <InteractiveSeatMap
+            event={event}
+            selectedSeatIds={selectedSeatIds}
+            onSeatClick={handleSeatClick}
+            onSectionChange={handleSectionChange}
+            rightPanelWidth={384} // w-96 = 384px
+          />
+        )}
       </div>
 
       {/* Header - Floating overlay */}
@@ -170,7 +183,7 @@ export default function TicketSelectionPage() {
         onSelectTicket={handleSelectTicket}
         quantity={quantity}
         onQuantityChange={setQuantity}
-        currentSectionId={currentSectionId}
+        currentSectionId={useAutoSeatMap ? null : currentSectionId}
         onContinue={handleContinue}
       />
     </div>

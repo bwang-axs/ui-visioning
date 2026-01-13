@@ -251,4 +251,28 @@ export const mockEvents: Event[] = [
       },
     ],
   },
+  {
+    id: 'event-6',
+    title: 'Concert with Auto-Generated Seatmap',
+    artistId: 'artist-1',
+    date: '2024-10-15T20:00:00',
+    venue: {
+      name: 'Grand Concert Hall',
+      address: '500 Music Boulevard, Los Angeles, CA 90001',
+    },
+    description: 'Experience this amazing concert with an automatically generated interactive seatmap featuring 5 sections and 300 seats.',
+    category: 'Pop',
+    sections: [
+      // Section 1: Premium Floor (60 seats = 6 rows x 10 seats)
+      createSection('section-premium-A', 'Premium Floor A', 450, 6, 10, 0.85),
+      // Section 2: Floor Left (60 seats = 6 rows x 10 seats)
+      createSection('section-floor-B', 'Floor Left', 350, 6, 10, 0.75),
+      // Section 3: Floor Right (60 seats = 6 rows x 10 seats)
+      createSection('section-floor-C', 'Floor Right', 350, 6, 10, 0.80),
+      // Section 4: Lower Bowl (60 seats = 10 rows x 6 seats)
+      createSection('section-lower-D', 'Lower Bowl', 250, 10, 6, 0.70),
+      // Section 5: Upper Bowl (60 seats = 10 rows x 6 seats)
+      createSection('section-upper-E', 'Upper Bowl', 150, 10, 6, 0.90),
+    ],
+  },
 ];
