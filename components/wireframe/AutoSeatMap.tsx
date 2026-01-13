@@ -27,8 +27,23 @@ export default function AutoSeatMap({
 
   // Convert event sections to seatmap-canvas block format
   const convertEventToSeatmapData = useCallback(() => {
+    // Validate event data
+    if (!event || !event.sections || !Array.isArray(event.sections)) {
+      console.error('Invalid event data:', event);
+      return { blocks: [] };
+    }
+
     let globalSeatId = 1; // Unique across all blocks
-    const blocks = event.sections.map((section, sectionIndex) => {
+    const blocks = event.sections
+      .filter((section) => {
+        // Filter out invalid sections
+        if (!section || !section.rows || !Array.isArray(section.rows)) {
+          console.warn('Skipping invalid section:', section);
+          return false;
+        }
+        return true;
+      })
+      .map((section, sectionIndex) => {
       // Calculate starting position for each section (arrange horizontally)
       const sectionXOffset = sectionIndex * 400;
       const rowSpacing = 35; // Vertical spacing between rows
@@ -51,43 +66,69 @@ export default function AutoSeatMap({
       }> = [];
 
       section.rows.forEach((row, rowIndex) => {
+        // Skip if row or seats is missing
+        if (!row || !row.seats || !Array.isArray(row.seats)) {
+          console.warn(`Skipping invalid row in section ${section.name}:`, row);
+          return;
+        }
+
         row.seats.forEach((seat, seatIndex) => {
-          const seatId = `${section.id}-${row.row}-${seat.seat}`;
+          // Skip if seat is missing or doesn't have required properties
+          if (!seat) {
+            console.warn(`Skipping invalid seat at index ${seatIndex} in row ${row.row}`);
+            return;
+          }
+
+          // Ensure all required properties exist
+          const seatNumber = seat.seat || `${seatIndex + 1}`;
+          const seatPrice = seat.price ?? section.price ?? 0;
+          const seatAvailable = seat.available !== undefined ? seat.available : true;
+
+          const seatId = `${section.id}-${row.row}-${seatNumber}`;
           const isSelected = selectedSeatIds.includes(seatId);
 
           seats.push({
             id: globalSeatId++, // Keep numeric ID for seats
-            title: seat.seat,
+            title: seatNumber,
             x: sectionXOffset + seatIndex * seatSpacing,
             y: rowIndex * rowSpacing,
-            salable: seat.available,
-            note: `${section.name} - Row ${row.row} - Seat ${seat.seat} - $${seat.price}`,
+            salable: seatAvailable,
+            note: `${section.name} - Row ${row.row} - Seat ${seatNumber} - $${seatPrice}`,
             color: isSelected ? '#56aa45' : undefined,
             custom_data: {
               sectionId: section.id,
-              row: row.row,
-              seat: seat.seat,
-              price: seat.price,
+              row: row.row || `Row${rowIndex + 1}`,
+              seat: seatNumber,
+              price: seatPrice,
             },
           });
         });
       });
 
+      // Only return block if it has seats
+      if (seats.length === 0) {
+        console.warn(`Section ${section.name} has no valid seats`);
+        return null;
+      }
+
       return {
         id: `${section.id}-block`, // Use string ID for blocks
-        title: section.name,
+        title: section.name || `Section ${sectionIndex + 1}`,
         color: '#e2e2e2',
         labels: [
           {
-            title: section.name,
+            title: section.name || `Section ${sectionIndex + 1}`,
             x: -20,
             y: -10,
           },
         ],
-        seats,
+        seats: seats.filter(Boolean), // Remove any null/undefined seats
       };
-    });
+    })
+    .filter((block): block is NonNullable<typeof block> => block !== null && block.seats && block.seats.length > 0); // Remove empty blocks
 
+    console.log(`Converted ${blocks.length} blocks with ${blocks.reduce((sum, b) => sum + (b.seats?.length || 0), 0)} total seats`);
+    
     return { blocks };
   }, [event, selectedSeatIds]);
 
@@ -164,6 +205,23 @@ export default function AutoSeatMap({
         // Wait a bit for the instance to fully initialize
         await new Promise(resolve => setTimeout(resolve, 200));
 
+        // Validate seatmap data before setting
+        if (!seatmapData || !seatmapData.blocks || seatmapData.blocks.length === 0) {
+          throw new Error('Invalid seatmap data: no blocks found');
+        }
+
+        // Validate each block and seat
+        seatmapData.blocks.forEach((block: any, blockIndex: number) => {
+          if (!block || !block.seats || !Array.isArray(block.seats)) {
+            throw new Error(`Block ${blockIndex} is invalid: missing seats array`);
+          }
+          block.seats.forEach((seat: any, seatIndex: number) => {
+            if (!seat || typeof seat.id === 'undefined' || !seat.title || typeof seat.x === 'undefined' || typeof seat.y === 'undefined') {
+              throw new Error(`Seat ${seatIndex} in block ${blockIndex} is invalid: missing required properties (id, title, x, y)`);
+            }
+          });
+        });
+
         // Set the data (automatically generates all seats)
         // According to docs, setData expects { blocks: [...] }
         try {
@@ -182,20 +240,27 @@ export default function AutoSeatMap({
               console.log('Set blocks directly on data model');
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error setting seatmap data:', error);
+          console.error('Error stack:', error?.stack);
           throw error;
         }
 
         // Handle seat clicks
         if (seatmap.addEventListener) {
           seatmap.addEventListener('seat_click', (seat: any) => {
-            if (seat && seat.custom_data) {
-              onSeatClick(
-                seat.custom_data.sectionId,
-                seat.custom_data.row,
-                seat.custom_data.seat
-              );
+            try {
+              if (seat && seat.custom_data && seat.custom_data.sectionId && seat.custom_data.row && seat.custom_data.seat) {
+                onSeatClick(
+                  seat.custom_data.sectionId,
+                  seat.custom_data.row,
+                  seat.custom_data.seat
+                );
+              } else {
+                console.warn('Invalid seat data in click handler:', seat);
+              }
+            } catch (err) {
+              console.error('Error in seat click handler:', err, seat);
             }
           });
         }
