@@ -293,16 +293,16 @@ export default function InteractiveSeatMap({
           overflow: 'hidden',
         }}
       >
-        {/* Stage - positioned on right side as background */}
+        {/* Stage - positioned on far right as dark rectangle */}
         {scale < ZOOM_TRANSITION && (
           <div
-            className="absolute border-4 border-gray-700 bg-gray-800 text-white flex items-center justify-center font-bold text-xl z-0"
+            className="absolute border-4 border-gray-900 bg-gray-900 text-white flex items-center justify-center font-bold text-2xl z-0"
             style={{
-              left: '85%',
+              left: '92%',
               top: '50%',
               transform: 'translate(-50%, -50%)',
-              width: '250px',
-              height: '180px',
+              width: '200px',
+              height: '400px',
               transition: 'all 0.3s ease-out',
               opacity: Math.max(0, 1 - (scale - 1) * 0.5),
             }}
@@ -327,10 +327,10 @@ export default function InteractiveSeatMap({
           {scale < ZOOM_TRANSITION && (
             <>
               <div
-                className="absolute text-[10px] text-gray-600 font-semibold z-10"
+                className="absolute text-[9px] text-gray-600 font-semibold z-10"
                 style={{
-                  top: '16%',
-                  left: '45%',
+                  top: '14%',
+                  left: '50%',
                   transform: 'translateX(-50%)',
                   opacity: Math.max(0, 1 - (scale - 1) * 0.5),
                   transition: 'opacity 0.3s ease-out',
@@ -339,10 +339,10 @@ export default function InteractiveSeatMap({
                 MEZZANINE UPPER
               </div>
               <div
-                className="absolute text-[10px] text-gray-600 font-semibold z-10"
+                className="absolute text-[9px] text-gray-600 font-semibold z-10"
                 style={{
-                  top: '82%',
-                  left: '45%',
+                  top: '85%',
+                  left: '50%',
                   transform: 'translateX(-50%)',
                   opacity: Math.max(0, 1 - (scale - 1) * 0.5),
                   transition: 'opacity 0.3s ease-out',
