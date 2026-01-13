@@ -141,6 +141,15 @@ export default function AutoSeatMap({
         const container = containerRef.current;
         if (!container) return;
 
+        // Ensure container is empty and ready
+        container.innerHTML = '';
+        
+        // Ensure container has proper dimensions
+        if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+          console.warn('Container has zero dimensions, waiting...');
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
         // Import CSS first - load from public folder
         if (!document.getElementById('seatmap-canvas-styles')) {
           const link = document.createElement('link');
@@ -151,18 +160,53 @@ export default function AutoSeatMap({
         }
 
         // Wait a bit for CSS to load
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         const SeatmapCanvasModule = await import('@alisaitteke/seatmap-canvas');
         const SeatMapCanvas = (SeatmapCanvasModule as any).default || (SeatmapCanvasModule as any).SeatMapCanvas || SeatmapCanvasModule;
 
-        // Ensure we have a unique ID for the container
+        // Ensure we have a unique ID and class for the container
+        // Use a unique ID to avoid conflicts
+        const uniqueId = `seatmap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         if (!container.id) {
-          container.id = `seatmap-container-${Date.now()}`;
+          container.id = uniqueId;
+        }
+        // Ensure only seats_container class (remove other classes that might conflict)
+        container.className = 'seats_container';
+
+        // Convert event data to seatmap format FIRST (before creating instance)
+        const seatmapData = convertEventToSeatmapData();
+        
+        // Validate data before creating instance
+        if (!seatmapData || !seatmapData.blocks || seatmapData.blocks.length === 0) {
+          throw new Error('Invalid seatmap data: no blocks found');
         }
 
-        // Configuration for seatmap-canvas
-        const config = {
+        // Validate each block and seat before passing to library
+        seatmapData.blocks.forEach((block: any, blockIndex: number) => {
+          if (!block || !block.seats || !Array.isArray(block.seats)) {
+            throw new Error(`Block ${blockIndex} is invalid: missing seats array`);
+          }
+          block.seats.forEach((seat: any, seatIndex: number) => {
+            if (!seat || typeof seat.id === 'undefined' || !seat.title || typeof seat.x === 'undefined' || typeof seat.y === 'undefined') {
+              throw new Error(`Seat ${seatIndex} in block ${blockIndex} is invalid: missing required properties (id, title, x, y)`);
+            }
+          });
+        });
+
+        console.log('Seatmap data prepared:', {
+          blocks: seatmapData.blocks.length,
+          totalSeats: seatmapData.blocks.reduce((sum: number, b: any) => sum + (b.seats?.length || 0), 0),
+          firstBlockSample: seatmapData.blocks[0] ? {
+            id: seatmapData.blocks[0].id,
+            title: seatmapData.blocks[0].title,
+            seatCount: seatmapData.blocks[0].seats?.length,
+            firstSeat: seatmapData.blocks[0].seats?.[0]
+          } : null
+        });
+
+        // Configuration for seatmap-canvas - ensure all required properties are defined
+        const config: any = {
           resizable: true,
           seat_style: {
             radius: 12,
@@ -185,22 +229,36 @@ export default function AutoSeatMap({
           },
         };
 
-        // Create seatmap instance - use element directly or selector
-        // Try element first, fallback to selector
+        // Create seatmap instance using the unique ID selector
+        // Using ID selector is safer than class selector to avoid conflicts
+        const selector = `#${container.id}`;
+        console.log('Creating SeatMapCanvas with selector:', selector);
+        console.log('Container dimensions:', {
+          width: container.offsetWidth,
+          height: container.offsetHeight,
+          hasContent: container.innerHTML.length > 0
+        });
+        
         let seatmap;
         try {
-          seatmap = new SeatMapCanvas(container, config);
-        } catch (e) {
-          // If element doesn't work, try selector
-          seatmap = new SeatMapCanvas(`#${container.id}`, config);
+          seatmap = new SeatMapCanvas(selector, config);
+          console.log('SeatMapCanvas instance created successfully');
+        } catch (e: any) {
+          console.error('Error creating SeatMapCanvas:', e);
+          console.error('Error details:', {
+            message: e?.message,
+            stack: e?.stack,
+            container: container,
+            selector: selector
+          });
+          throw e; // Re-throw to be caught by outer try-catch
         }
-
-        // Convert event data to seatmap format
-        const seatmapData = convertEventToSeatmapData();
         
-        console.log('Seatmap data:', JSON.stringify(seatmapData, null, 2));
-        console.log('Number of blocks:', seatmapData.blocks.length);
-        console.log('Total seats:', seatmapData.blocks.reduce((sum, b) => sum + b.seats.length, 0));
+        // Remove the old log that might be too large
+        console.log('Seatmap data prepared:', {
+          blocks: seatmapData.blocks.length,
+          totalSeats: seatmapData.blocks.reduce((sum: number, b: any) => sum + (b.seats?.length || 0), 0)
+        });
 
         // Wait a bit for the instance to fully initialize
         await new Promise(resolve => setTimeout(resolve, 200));
@@ -349,6 +407,7 @@ export default function AutoSeatMap({
       <div
         ref={containerRef}
         className="seats_container w-full h-full"
+        id="seats_container"
         style={{ 
           minHeight: '100vh',
           width: '100%',
