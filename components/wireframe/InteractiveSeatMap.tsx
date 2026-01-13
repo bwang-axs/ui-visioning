@@ -1,17 +1,21 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Event, SeatSection } from '@/lib/types';
+import { Event } from '@/lib/types';
+import { stadiumSectionPositions } from '@/lib/data/stadiumLayout';
 
 interface InteractiveSeatMapProps {
   event: Event;
   selectedSeatIds: string[];
   onSeatClick: (sectionId: string, row: string, seat: string) => void;
   onSectionChange?: (sectionId: string | null) => void;
-  rightPanelWidth?: number; // Width of the right panel to avoid overlap (default 384px)
+  rightPanelWidth?: number;
 }
 
-type ZoomLevel = 'sections' | 'seats';
+// Zoom thresholds
+const ZOOM_SECTIONS = 1; // Show sections as boxes
+const ZOOM_TRANSITION = 3; // Start showing seats
+const ZOOM_SEATS = 5; // Fully zoomed into seats
 
 export default function InteractiveSeatMap({
   event,
@@ -20,14 +24,13 @@ export default function InteractiveSeatMap({
   onSectionChange,
   rightPanelWidth = 384,
 }: InteractiveSeatMapProps) {
-  const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('sections');
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
-  const canvasRef = useRef<HTMLDivElement>(null);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [viewportWidth, setViewportWidth] = useState(1200);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const getSeatId = (sectionId: string, row: string, seat: string) => {
     return `${sectionId}-${row}-${seat}`;
@@ -37,40 +40,65 @@ export default function InteractiveSeatMap({
     return selectedSeatIds.includes(getSeatId(sectionId, row, seat));
   };
 
+  // Track viewport width
+  useEffect(() => {
+    const updateViewport = () => {
+      setViewportWidth(window.innerWidth);
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  // Handle section click - smoothly zoom into section
   const handleSectionClick = (sectionId: string) => {
-    setSelectedSectionId(sectionId);
-    setZoomLevel('seats');
-    setScale(2);
-    setPan({ x: 0, y: 0 });
+    const section = event.sections.find((s) => s.id === sectionId);
+    if (!section) return;
+
+    setFocusedSectionId(sectionId);
+    // Animate zoom to transition level
+    setScale(ZOOM_TRANSITION);
+    
+    // Center on section
+    const position = section.position || stadiumSectionPositions[section.name] || { x: 50, y: 50 };
+    const leftViewportWidth = viewportWidth - rightPanelWidth;
+    const centerX = (position.x / 100) * leftViewportWidth;
+    const centerY = (position.y / 100) * window.innerHeight;
+    
+    setPan({
+      x: -(centerX - leftViewportWidth / 2) * ZOOM_TRANSITION,
+      y: -(centerY - window.innerHeight / 2) * ZOOM_TRANSITION,
+    });
+
     if (onSectionChange) {
       onSectionChange(sectionId);
     }
   };
 
-  const handleZoomOut = () => {
-    setZoomLevel('sections');
-    setSelectedSectionId(null);
-    setScale(1);
-    setPan({ x: 0, y: 0 });
-    if (onSectionChange) {
-      onSectionChange(null);
+  const handleZoomIn = () => {
+    if (scale < 8) {
+      setScale((prev) => Math.min(prev + 0.5, 8));
     }
   };
 
-  const handleZoomIn = () => {
-    setScale((prev) => Math.min(prev + 0.5, 4));
-  };
-
-  const handleZoomOutBtn = () => {
-    if (zoomLevel === 'seats' && scale <= 1.5) {
-      handleZoomOut();
-    } else {
-      setScale((prev) => Math.max(prev - 0.5, 0.5));
+  const handleZoomOut = () => {
+    if (scale > 1) {
+      const newScale = Math.max(scale - 0.5, 1);
+      setScale(newScale);
+      
+      // If zooming out completely, reset focus
+      if (newScale <= ZOOM_SECTIONS) {
+        setFocusedSectionId(null);
+        setPan({ x: 0, y: 0 });
+        if (onSectionChange) {
+          onSectionChange(null);
+        }
+      }
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (zoomLevel === 'seats') {
+    if (scale > ZOOM_SECTIONS) {
       setIsDragging(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
@@ -78,35 +106,21 @@ export default function InteractiveSeatMap({
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (isDragging && zoomLevel === 'seats') {
+      if (isDragging && scale > ZOOM_SECTIONS) {
         const newPanX = e.clientX - dragStart.x;
         const newPanY = e.clientY - dragStart.y;
-        
-        // Constrain panning - prevent moving content to the right (under panel)
-        // Only allow panning left/up/down
         setPan({
-          x: Math.min(newPanX, 0), // Can't pan right past x=0
+          x: Math.min(newPanX, 0),
           y: newPanY,
         });
       }
     },
-    [isDragging, dragStart, zoomLevel]
+    [isDragging, dragStart, scale]
   );
 
   const handleMouseUp = () => {
     setIsDragging(false);
   };
-
-  // Track viewport width for responsive layout
-  useEffect(() => {
-    const updateViewport = () => {
-      setViewportWidth(window.innerWidth);
-    };
-    
-    updateViewport();
-    window.addEventListener('resize', updateViewport);
-    return () => window.removeEventListener('resize', updateViewport);
-  }, []);
 
   useEffect(() => {
     if (isDragging) {
@@ -119,268 +133,215 @@ export default function InteractiveSeatMap({
     }
   }, [isDragging, handleMouseMove]);
 
-  // Render sections view (zoomed out)
-  const renderSectionsView = () => {
-    const padding = 40;
-    const stageWidth = 400;
-    const stageHeight = 200;
-
-    // Calculate availability for each section
-    const sectionsWithAvailability = event.sections.map((section) => {
-      const availableSeats = section.rows.reduce(
-        (acc, r) => acc + r.seats.filter((s) => s.available).length,
-        0
-      );
-      const totalSeats = section.rows.reduce(
-        (acc, r) => acc + r.seats.length,
-        0
-      );
-      return {
-        ...section,
-        availableSeats,
-        totalSeats,
-        availabilityRatio: availableSeats / totalSeats,
-      };
-    });
-
-    // Group sections by type (floor vs upper sections)
-    const floorSections = sectionsWithAvailability.filter((s) =>
-      s.name.toLowerCase().includes('floor') || s.name.toLowerCase().includes('a')
+  // Calculate availability for a section
+  const getSectionAvailability = (section: typeof event.sections[0]) => {
+    const availableSeats = section.rows.reduce(
+      (acc, r) => acc + r.seats.filter((s) => s.available).length,
+      0
     );
-    const upperSections = sectionsWithAvailability.filter(
-      (s) => !floorSections.includes(s)
-    );
+    const totalSeats = section.rows.reduce((acc, r) => acc + r.seats.length, 0);
+    return { availableSeats, totalSeats, ratio: availableSeats / totalSeats };
+  };
+
+  // Render a section as a box (low zoom)
+  const renderSectionBox = (section: typeof event.sections[0], index: number) => {
+    const availability = getSectionAvailability(section);
+    const position = section.position || stadiumSectionPositions[section.name] || { x: 50, y: 50 };
+    
+    const showAsBox = scale < ZOOM_TRANSITION;
+    const showSeats = scale >= ZOOM_TRANSITION;
+    const isFocused = focusedSectionId === section.id;
+    
+    // Calculate opacity and scale based on zoom
+    const sectionScale = isFocused && showSeats 
+      ? 1 + (scale - ZOOM_TRANSITION) * 0.3 
+      : 1;
+    
+    const sectionOpacity = showSeats && !isFocused 
+      ? Math.max(0.1, 1 - (scale - ZOOM_TRANSITION) * 0.3) 
+      : 1;
+
+    if (showSeats && !isFocused && scale > ZOOM_TRANSITION + 1) {
+      return null; // Hide other sections when fully zoomed
+    }
 
     return (
       <div
-        className="relative flex items-center justify-center"
-        style={{ width: '100%', height: '100%', minHeight: '600px' }}
+        key={section.id}
+        className="absolute"
+        style={{
+          left: `${position.x}%`,
+          top: `${position.y}%`,
+          transform: `translate(-50%, -50%) scale(${sectionScale})`,
+          opacity: sectionOpacity,
+          transition: isDragging ? 'none' : 'all 0.3s ease-out',
+          pointerEvents: showSeats && !isFocused ? 'none' : 'auto',
+        }}
       >
-        {/* Stage */}
-        <div
-          className="absolute border-4 border-gray-700 bg-gray-800 text-white flex items-center justify-center font-bold text-2xl z-10"
-          style={{
-            bottom: padding,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: stageWidth,
-            height: stageHeight,
-          }}
-        >
-          STAGE
-        </div>
-
-        {/* Stadium Layout */}
-        <div className="relative w-full h-full flex flex-col items-center justify-center p-8">
-          {/* Upper Sections - Arranged in semi-circle above stage */}
-          {upperSections.length > 0 && (
-            <div className="mb-8">
-              <div className="text-xs text-gray-600 mb-2 text-center font-semibold">
-                MEZZANINE UPPER
-              </div>
-              <div className="flex flex-wrap justify-center gap-2 max-w-4xl">
-                {upperSections.map((section) => (
-                  <button
-                    key={section.id}
-                    onClick={() => handleSectionClick(section.id)}
-                    className={`border-2 px-4 py-3 rounded transition-all hover:scale-105 min-w-[100px] ${
-                      section.availabilityRatio > 0.5
-                        ? 'border-blue-500 bg-blue-100 hover:bg-blue-200'
-                        : section.availabilityRatio > 0
-                        ? 'border-orange-500 bg-orange-100 hover:bg-orange-200'
-                        : 'border-gray-400 bg-gray-300 cursor-not-allowed'
-                    }`}
-                  >
-                    <div className="text-center">
-                      <p className="font-semibold text-sm">{section.name}</p>
-                      <p className="text-xs mt-1">${section.price}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
+        {showAsBox ? (
+          // Render as clickable box
+          <button
+            onClick={() => handleSectionClick(section.id)}
+            className={`border-2 px-3 py-2 rounded transition-all hover:scale-110 min-w-[80px] ${
+              availability.ratio > 0.5
+                ? 'border-blue-500 bg-blue-100 hover:bg-blue-200'
+                : availability.ratio > 0
+                ? 'border-orange-500 bg-orange-100 hover:bg-orange-200'
+                : 'border-gray-400 bg-gray-300 cursor-not-allowed'
+            }`}
+          >
+            <div className="text-center">
+              <p className="font-semibold text-xs">{section.name}</p>
+              <p className="text-xs mt-1">${section.price}</p>
             </div>
-          )}
-
-          {/* Floor Sections - Around the stage */}
-          {floorSections.length > 0 && (
-            <div className="mb-32">
-              <div className="text-xs text-gray-600 mb-2 text-center font-semibold">
-                MEZZANINE LOWER
-              </div>
-              <div className="flex flex-wrap justify-center gap-2 max-w-5xl">
-                {floorSections.map((section) => (
-                  <button
-                    key={section.id}
-                    onClick={() => handleSectionClick(section.id)}
-                    className={`border-2 px-4 py-3 rounded transition-all hover:scale-105 min-w-[100px] ${
-                      section.availabilityRatio > 0.5
-                        ? 'border-blue-500 bg-blue-100 hover:bg-blue-200'
-                        : section.availabilityRatio > 0
-                        ? 'border-orange-500 bg-orange-100 hover:bg-orange-200'
-                        : 'border-gray-400 bg-gray-300 cursor-not-allowed'
-                    }`}
-                  >
-                    <div className="text-center">
-                      <p className="font-semibold text-sm">{section.name}</p>
-                      <p className="text-xs mt-1">${section.price}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
+          </button>
+        ) : showSeats && isFocused ? (
+          // Render as seats when zoomed in
+          <div className="relative">
+            <div className="mb-2 text-center">
+              <p className="text-sm font-bold">{section.name}</p>
+              <p className="text-xs">${section.price}</p>
             </div>
-          )}
-
-          {/* Fallback: Show all sections in grid if grouping doesn't work */}
-          {floorSections.length === 0 && upperSections.length === 0 && (
-            <div className="grid grid-cols-8 gap-3 w-full">
-              {sectionsWithAvailability.map((section) => (
-                <button
-                  key={section.id}
-                  onClick={() => handleSectionClick(section.id)}
-                  className={`border-2 p-3 rounded transition-all hover:scale-105 ${
-                    section.availabilityRatio > 0.5
-                      ? 'border-blue-500 bg-blue-100 hover:bg-blue-200'
-                      : section.availabilityRatio > 0
-                      ? 'border-orange-500 bg-orange-100 hover:bg-orange-200'
-                      : 'border-gray-400 bg-gray-300 cursor-not-allowed'
-                  }`}
-                >
-                  <div className="text-center">
-                    <p className="font-semibold text-sm">{section.name}</p>
-                    <p className="text-xs mt-1">${section.price}</p>
+            <div className="flex flex-col items-center gap-1" style={{ transform: `scale(${Math.min(1, (scale - ZOOM_TRANSITION) / 2)})` }}>
+              {section.rows.slice(0, Math.floor(scale - ZOOM_TRANSITION) * 2 + 3).map((row) => (
+                <div key={row.row} className="flex items-center gap-1">
+                  <span className="text-[8px] text-gray-600 w-6 text-right">{row.row}</span>
+                  <div className="flex gap-0.5">
+                    {row.seats.slice(0, Math.floor((scale - ZOOM_TRANSITION) * 3) + 5).map((seat) => {
+                      const seatId = getSeatId(section.id, row.row, seat.seat);
+                      const isSelected = isSeatSelected(section.id, row.row, seat.seat);
+                      
+                      return (
+                        <button
+                          key={seat.seat}
+                          onClick={() => onSeatClick(section.id, row.row, seat.seat)}
+                          disabled={!seat.available}
+                          className={`rounded-full border transition-all ${
+                            !seat.available
+                              ? 'bg-gray-400 border-gray-500 cursor-not-allowed'
+                              : isSelected
+                              ? 'bg-blue-600 border-blue-700 ring-1 ring-blue-400'
+                              : 'bg-gray-100 border-gray-300 hover:border-blue-500 hover:bg-blue-50'
+                          }`}
+                          style={{
+                            width: Math.max(12, 20 - (8 - scale) * 2),
+                            height: Math.max(12, 20 - (8 - scale) * 2),
+                            fontSize: scale > 6 ? '8px' : '0px',
+                          }}
+                          title={`${section.name} Row ${row.row} Seat ${seat.seat} - $${seat.price}`}
+                        >
+                          {scale > 6 ? seat.seat : ''}
+                        </button>
+                      );
+                    })}
                   </div>
-                </button>
+                </div>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        ) : null}
       </div>
     );
   };
 
-  // Render seats view (zoomed in)
-  const renderSeatsView = () => {
-    const section = event.sections.find((s) => s.id === selectedSectionId);
-    if (!section) return null;
-
-    const seatSize = 24;
-    const rowSpacing = 30;
-    const seatSpacing = 28;
-    
-    // Calculate left viewport width (full width minus right panel)
-    const leftViewportWidth = viewportWidth - rightPanelWidth;
-
-    return (
-      <div
-        className="relative overflow-hidden"
-        style={{ 
-          width: '100%', 
-          height: '100%', 
-          minHeight: '600px',
-        }}
-        onMouseDown={handleMouseDown}
-      >
-        {/* Left viewport container - constrains seat display to left side */}
-        <div
-          className="absolute"
-          style={{
-            left: 0,
-            top: 0,
-            width: `${leftViewportWidth}px`,
-            height: '100%',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Constrain panning to prevent seats from going under the panel */}
-          <div
-            className="absolute"
-            style={{
-              transform: `translate(${Math.min(pan.x, 0)}px, ${pan.y}px) scale(${scale})`,
-              transformOrigin: 'left center',
-              transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-            }}
-          >
-          {/* Section Header */}
-          <div className="mb-4 text-center">
-            <button
-              onClick={handleZoomOut}
-              className="px-4 py-2 border-2 border-gray-300 bg-white hover:border-gray-500 mb-2"
-            >
-              ← Back to Sections
-            </button>
-            <h3 className="text-xl font-bold">{section.name}</h3>
-            <p className="text-sm text-gray-600">${section.price}</p>
-          </div>
-
-          {/* Seats Grid */}
-          <div className="flex flex-col items-center gap-2">
-            {section.rows.map((row, rowIndex) => (
-              <div key={row.row} className="flex items-center gap-2">
-                <span className="text-xs text-gray-600 w-8 text-right">{row.row}</span>
-                <div className="flex gap-1">
-                  {row.seats.map((seat) => {
-                    const seatId = getSeatId(section.id, row.row, seat.seat);
-                    const isSelected = isSeatSelected(section.id, row.row, seat.seat);
-
-                    return (
-                      <button
-                        key={seat.seat}
-                        onClick={() => onSeatClick(section.id, row.row, seat.seat)}
-                        disabled={!seat.available}
-                        className={`rounded-full border-2 transition-all ${
-                          !seat.available
-                            ? 'bg-gray-400 border-gray-500 cursor-not-allowed'
-                            : isSelected
-                            ? 'bg-blue-600 border-blue-700 ring-2 ring-blue-400'
-                            : 'bg-gray-100 border-gray-300 hover:border-blue-500 hover:bg-blue-50'
-                        }`}
-                        style={{
-                          width: seatSize,
-                          height: seatSize,
-                          fontSize: '10px',
-                        }}
-                        title={`${section.name} Row ${row.row} Seat ${seat.seat} - $${seat.price}`}
-                      >
-                        {seatSize > 20 ? seat.seat : ''}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const leftViewportWidth = viewportWidth - rightPanelWidth;
 
   return (
     <div
       ref={canvasRef}
       className="fixed inset-0 bg-gray-100 overflow-hidden"
       style={{ width: '100%', height: '100vh' }}
+      onMouseDown={handleMouseDown}
     >
       {/* Zoom Controls */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 border-2 border-gray-300 bg-white">
         <button
           onClick={handleZoomIn}
           className="px-3 py-2 border-b border-gray-300 hover:bg-gray-100 font-bold"
-          disabled={scale >= 4}
+          disabled={scale >= 8}
         >
           +
         </button>
         <button
-          onClick={handleZoomOutBtn}
+          onClick={handleZoomOut}
           className="px-3 py-2 hover:bg-gray-100 font-bold"
-          disabled={zoomLevel === 'sections' && scale <= 1}
+          disabled={scale <= 1}
         >
           −
         </button>
       </div>
 
-      {/* Seatmap Content */}
-      {zoomLevel === 'sections' ? renderSectionsView() : renderSeatsView()}
+      {/* Left viewport container */}
+      <div
+        className="absolute"
+        style={{
+          left: 0,
+          top: 0,
+          width: `${leftViewportWidth}px`,
+          height: '100%',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Stage - only show at low zoom */}
+        {scale < ZOOM_TRANSITION && (
+          <div
+            className="absolute border-4 border-gray-700 bg-gray-800 text-white flex items-center justify-center font-bold text-xl"
+            style={{
+              right: '15%',
+              bottom: '20%',
+              width: '300px',
+              height: '150px',
+              transition: 'all 0.3s ease-out',
+              opacity: Math.max(0, 1 - (scale - 1) * 0.5),
+            }}
+          >
+            STAGE
+          </div>
+        )}
+
+        {/* Sections container with pan and zoom */}
+        <div
+          className="absolute w-full h-full"
+          style={{
+            transform: `translate(${Math.min(pan.x, 0)}px, ${pan.y}px) scale(${scale})`,
+            transformOrigin: 'left center',
+            transition: isDragging ? 'none' : 'transform 0.2s ease-out',
+          }}
+        >
+          {/* Render all sections */}
+          {event.sections.map((section, index) => renderSectionBox(section, index))}
+
+          {/* Mezzanine Labels - only at low zoom */}
+          {scale < ZOOM_TRANSITION && (
+            <>
+              <div
+                className="absolute text-xs text-gray-600 font-semibold"
+                style={{
+                  top: '15%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  opacity: Math.max(0, 1 - (scale - 1) * 0.5),
+                  transition: 'opacity 0.3s ease-out',
+                }}
+              >
+                MEZZANINE UPPER
+              </div>
+              <div
+                className="absolute text-xs text-gray-600 font-semibold"
+                style={{
+                  bottom: '15%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  opacity: Math.max(0, 1 - (scale - 1) * 0.5),
+                  transition: 'opacity 0.3s ease-out',
+                }}
+              >
+                MEZZANINE LOWER
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
