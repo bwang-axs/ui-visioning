@@ -21,6 +21,7 @@ export interface SeatSection {
   name: string;
   price: number;
   rows: SeatRow[];
+  position?: { x: number; y: number }; // Percentage-based position for stadium layout
 }
 
 export interface Event {
