@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://cdn.jsdelivr.net/npm/seatchart@latest/dist/seatchart.min.css');
 
 :root {
   --background: #ffffff;

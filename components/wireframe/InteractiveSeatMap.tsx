@@ -31,6 +31,8 @@ export default function InteractiveSeatMap({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [viewportWidth, setViewportWidth] = useState(1200);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const seatchartInstanceRef = useRef<any>(null);
+  const seatchartContainerRef = useRef<HTMLDivElement>(null);
 
   const getSeatId = (sectionId: string, row: string, seat: string) => {
     return `${sectionId}-${row}-${seat}`;
@@ -50,7 +52,7 @@ export default function InteractiveSeatMap({
     return () => window.removeEventListener('resize', updateViewport);
   }, []);
 
-  // Handle section click - smoothly zoom into section
+  // Handle section click - smoothly zoom into section and render with Seatchart
   const handleSectionClick = (sectionId: string) => {
     const section = event.sections.find((s) => s.id === sectionId);
     if (!section) return;
@@ -70,10 +72,112 @@ export default function InteractiveSeatMap({
       y: -(centerY - window.innerHeight / 2) * ZOOM_TRANSITION,
     });
 
+    // Render section with Seatchart when zoomed in
+    renderSectionWithSeatchart(section);
+
     if (onSectionChange) {
       onSectionChange(sectionId);
     }
   };
+
+  // Render a section using Seatchart for automatic seat generation
+  const renderSectionWithSeatchart = useCallback(async (section: typeof event.sections[0]) => {
+    if (!seatchartContainerRef.current) return;
+
+    // Destroy previous instance
+    if (seatchartInstanceRef.current) {
+      try {
+        seatchartInstanceRef.current.destroy();
+      } catch (e) {
+        // Ignore errors
+      }
+    }
+
+    // Dynamically import Seatchart
+    const SeatchartModule = await import('seatchart');
+    const Seatchart = (SeatchartModule as any).default || SeatchartModule;
+
+    // Clear container
+    seatchartContainerRef.current.innerHTML = '';
+
+    // Calculate dimensions
+    const rows = section.rows.length;
+    const columns = Math.max(...section.rows.map((r) => r.seats.length), 1);
+
+    // Convert seats to Seatchart format
+    const reservedSeats: Array<{ row: number; col: number }> = [];
+    const selectedSeats: Array<{ row: number; col: number }> = [];
+    const seatMap = new Map<string, { sectionId: string; row: string; seat: string; price: number }>();
+
+    section.rows.forEach((row, rowIdx) => {
+      row.seats.forEach((seat, seatIdx) => {
+        if (!seat.available) {
+          reservedSeats.push({ row: rowIdx, col: seatIdx });
+        }
+
+        const seatId = `${section.id}-${row.row}-${seat.seat}`;
+        if (selectedSeatIds.includes(seatId)) {
+          selectedSeats.push({ row: rowIdx, col: seatIdx });
+        }
+
+        seatMap.set(`${rowIdx}-${seatIdx}`, {
+          sectionId: section.id,
+          row: row.row,
+          seat: seat.seat,
+          price: seat.price,
+        });
+      });
+    });
+
+    // Create Seatchart instance
+    const options = {
+      map: {
+        rows,
+        columns,
+        seatTypes: {
+          default: {
+            label: section.name,
+            price: section.price,
+            cssClass: 'seat-default',
+          },
+        },
+        reservedSeats,
+        selectedSeats,
+        seatLabel: (index: { row: number; col: number }) => {
+          const key = `${index.row}-${index.col}`;
+          const seatInfo = seatMap.get(key);
+          return seatInfo?.seat || '';
+        },
+      },
+      cart: {
+        visible: false, // Hide cart, we use our own panel
+      },
+      onSeatSelect: (index: { row: number; col: number }) => {
+        const key = `${index.row}-${index.col}`;
+        const seatInfo = seatMap.get(key);
+        if (seatInfo) {
+          onSeatClick(seatInfo.sectionId, seatInfo.row, seatInfo.seat);
+        }
+      },
+    };
+
+    try {
+      const seatChart = new Seatchart(seatchartContainerRef.current, options);
+      seatchartInstanceRef.current = seatChart;
+    } catch (e) {
+      console.error('Error creating Seatchart instance:', e);
+    }
+  }, [selectedSeatIds, onSeatClick]);
+
+  // Update Seatchart when zooming into a section
+  useEffect(() => {
+    if (focusedSectionId && scale >= ZOOM_TRANSITION && seatchartContainerRef.current) {
+      const section = event.sections.find((s) => s.id === focusedSectionId);
+      if (section) {
+        renderSectionWithSeatchart(section);
+      }
+    }
+  }, [focusedSectionId, scale, event, renderSectionWithSeatchart]);
 
   const handleZoomIn = () => {
     if (scale < 8) {
@@ -86,10 +190,21 @@ export default function InteractiveSeatMap({
       const newScale = Math.max(scale - 0.5, 1);
       setScale(newScale);
       
-      // If zooming out completely, reset focus
+      // If zooming out completely, reset focus and destroy Seatchart
       if (newScale <= ZOOM_SECTIONS) {
         setFocusedSectionId(null);
         setPan({ x: 0, y: 0 });
+        if (seatchartInstanceRef.current) {
+          try {
+            seatchartInstanceRef.current.destroy();
+          } catch (e) {
+            // Ignore
+          }
+          seatchartInstanceRef.current = null;
+        }
+        if (seatchartContainerRef.current) {
+          seatchartContainerRef.current.innerHTML = '';
+        }
         if (onSectionChange) {
           onSectionChange(null);
         }
@@ -207,48 +322,25 @@ export default function InteractiveSeatMap({
             </div>
           </button>
         ) : showSeats && isFocused ? (
-          // Render as seats when zoomed in
-          <div className="relative">
-            <div className="mb-2 text-center">
-              <p className="text-sm font-bold">{section.name}</p>
-              <p className="text-xs">${section.price}</p>
+          // Render as seats using Seatchart when zoomed in
+          <div className="relative bg-white border-2 border-gray-300 rounded p-4" style={{ minWidth: '600px', minHeight: '500px' }}>
+            <div className="mb-4 text-center">
+              <button
+                onClick={handleZoomOut}
+                className="px-4 py-2 border-2 border-gray-300 bg-white hover:border-gray-500 mb-2"
+              >
+                ← Back to Sections
+              </button>
+              <p className="text-lg font-bold">{section.name}</p>
+              <p className="text-sm text-gray-600">${section.price}</p>
             </div>
-            <div className="flex flex-col items-center gap-1" style={{ transform: `scale(${Math.min(1, (scale - ZOOM_TRANSITION) / 2)})` }}>
-              {section.rows.slice(0, Math.floor(scale - ZOOM_TRANSITION) * 2 + 3).map((row) => (
-                <div key={row.row} className="flex items-center gap-1">
-                  <span className="text-[8px] text-gray-600 w-6 text-right">{row.row}</span>
-                  <div className="flex gap-0.5">
-                    {row.seats.slice(0, Math.floor((scale - ZOOM_TRANSITION) * 3) + 5).map((seat) => {
-                      const seatId = getSeatId(section.id, row.row, seat.seat);
-                      const isSelected = isSeatSelected(section.id, row.row, seat.seat);
-                      
-                      return (
-                        <button
-                          key={seat.seat}
-                          onClick={() => onSeatClick(section.id, row.row, seat.seat)}
-                          disabled={!seat.available}
-                          className={`rounded-full border transition-all ${
-                            !seat.available
-                              ? 'bg-gray-400 border-gray-500 cursor-not-allowed'
-                              : isSelected
-                              ? 'bg-blue-600 border-blue-700 ring-1 ring-blue-400'
-                              : 'bg-gray-100 border-gray-300 hover:border-blue-500 hover:bg-blue-50'
-                          }`}
-                          style={{
-                            width: Math.max(12, 20 - (8 - scale) * 2),
-                            height: Math.max(12, 20 - (8 - scale) * 2),
-                            fontSize: scale > 6 ? '8px' : '0px',
-                          }}
-                          title={`${section.name} Row ${row.row} Seat ${seat.seat} - $${seat.price}`}
-                        >
-                          {scale > 6 ? seat.seat : ''}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <div
+              ref={seatchartContainerRef}
+              className="seatchart-container w-full"
+              style={{
+                minHeight: '400px',
+              }}
+            />
           </div>
         ) : null}
       </div>
