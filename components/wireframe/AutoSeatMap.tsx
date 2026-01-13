@@ -141,14 +141,24 @@ export default function AutoSeatMap({
         const container = containerRef.current;
         if (!container) return;
 
+        // Wait for container to be properly rendered with dimensions
+        // Check multiple times to ensure it has dimensions
+        let attempts = 0;
+        while ((container.offsetWidth === 0 || container.offsetHeight === 0) && attempts < 10) {
+          console.log(`Waiting for container dimensions (attempt ${attempts + 1})...`, {
+            width: container.offsetWidth,
+            height: container.offsetHeight
+          });
+          await new Promise(resolve => setTimeout(resolve, 100));
+          attempts++;
+        }
+
+        if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+          console.warn('Container still has zero dimensions after waiting, but proceeding anyway');
+        }
+
         // Ensure container is empty and ready
         container.innerHTML = '';
-        
-        // Ensure container has proper dimensions
-        if (container.offsetWidth === 0 || container.offsetHeight === 0) {
-          console.warn('Container has zero dimensions, waiting...');
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
 
         // Import CSS first - load from public folder
         if (!document.getElementById('seatmap-canvas-styles')) {
@@ -229,14 +239,41 @@ export default function AutoSeatMap({
           },
         };
 
-        // Create seatmap instance using the unique ID selector
-        // Using ID selector is safer than class selector to avoid conflicts
-        const selector = `#${container.id}`;
-        console.log('Creating SeatMapCanvas with selector:', selector);
-        console.log('Container dimensions:', {
+        // Verify container is in DOM and has dimensions
+        const rect = container.getBoundingClientRect();
+        const hasDimensions = container.offsetWidth > 0 && container.offsetHeight > 0;
+        
+        console.log('Container state before initialization:', {
+          id: container.id,
           width: container.offsetWidth,
           height: container.offsetHeight,
-          hasContent: container.innerHTML.length > 0
+          clientWidth: container.clientWidth,
+          clientHeight: container.clientHeight,
+          boundingRect: rect,
+          isConnected: container.isConnected,
+          hasDimensions: hasDimensions
+        });
+
+        // Force container to have visible dimensions
+        // The library might need dimensions during initialization
+        if (!hasDimensions) {
+          container.style.display = 'block';
+          container.style.width = '800px';
+          container.style.height = '600px';
+          container.style.position = 'relative';
+          console.log('Forced container dimensions');
+          // Wait one more frame for styles to apply
+          await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+
+        // Create seatmap instance using the unique ID selector
+        const selector = `#${container.id}`;
+        console.log('Creating SeatMapCanvas with selector:', selector);
+        console.log('Final container check:', {
+          selector: selector,
+          found: !!document.querySelector(selector),
+          width: container.offsetWidth,
+          height: container.offsetHeight
         });
         
         let seatmap;
@@ -245,13 +282,16 @@ export default function AutoSeatMap({
           console.log('SeatMapCanvas instance created successfully');
         } catch (e: any) {
           console.error('Error creating SeatMapCanvas:', e);
-          console.error('Error details:', {
-            message: e?.message,
-            stack: e?.stack,
-            container: container,
-            selector: selector
-          });
-          throw e; // Re-throw to be caught by outer try-catch
+          console.error('Full error:', e);
+          // Try one more time with element directly
+          console.log('Attempting fallback: creating with element directly...');
+          try {
+            seatmap = new SeatMapCanvas(container, config);
+            console.log('SeatMapCanvas created successfully with element');
+          } catch (e2: any) {
+            console.error('Fallback also failed:', e2);
+            throw e; // Throw original error
+          }
         }
         
         // Remove the old log that might be too large
@@ -407,13 +447,14 @@ export default function AutoSeatMap({
       <div
         ref={containerRef}
         className="seats_container w-full h-full"
-        id="seats_container"
         style={{ 
-          minHeight: '100vh',
+          minHeight: 'calc(100vh - 120px)',
+          height: 'calc(100vh - 120px)',
           width: '100%',
           paddingTop: '120px', // Space for header
           position: 'relative',
           display: loading || error ? 'none' : 'block',
+          overflow: 'hidden',
         }}
       />
     </div>

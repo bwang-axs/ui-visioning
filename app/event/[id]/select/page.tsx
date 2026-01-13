@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { mockEvents } from '@/lib/data/mockEvents';
 import { mockTickets } from '@/lib/data/mockTickets';
 import InteractiveSeatMap from '@/components/wireframe/InteractiveSeatMap';
-import AutoSeatMap from '@/components/wireframe/AutoSeatMap';
+import AutoSeatMapSeatchart from '@/components/wireframe/AutoSeatMapSeatchart';
 import TicketPanel from '@/components/wireframe/TicketPanel';
 import { Ticket } from '@/lib/types';
 
@@ -148,7 +148,7 @@ export default function TicketSelectionPage() {
       {/* Seatmap - Full screen background */}
       <div className="fixed inset-0">
         {useAutoSeatMap ? (
-          <AutoSeatMap
+          <AutoSeatMapSeatchart
             event={event}
             selectedSeatIds={selectedSeatIds}
             onSeatClick={handleSeatClick}
