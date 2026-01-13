@@ -22,9 +22,12 @@ export default function AutoSeatMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const seatmapInstanceRef = useRef<any>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Convert event sections to seatmap-canvas block format
   const convertEventToSeatmapData = useCallback(() => {
+    let globalSeatId = 1; // Unique across all blocks
     const blocks = event.sections.map((section, sectionIndex) => {
       // Calculate starting position for each section (arrange horizontally)
       const sectionXOffset = sectionIndex * 400;
@@ -47,14 +50,13 @@ export default function AutoSeatMap({
         };
       }> = [];
 
-      let globalSeatId = 1;
       section.rows.forEach((row, rowIndex) => {
         row.seats.forEach((seat, seatIndex) => {
           const seatId = `${section.id}-${row.row}-${seat.seat}`;
           const isSelected = selectedSeatIds.includes(seatId);
 
           seats.push({
-            id: globalSeatId++,
+            id: globalSeatId++, // Keep numeric ID for seats
             title: seat.seat,
             x: sectionXOffset + seatIndex * seatSpacing,
             y: rowIndex * rowSpacing,
@@ -72,7 +74,7 @@ export default function AutoSeatMap({
       });
 
       return {
-        id: sectionIndex + 1,
+        id: `${section.id}-block`, // Use string ID for blocks
         title: section.name,
         color: '#e2e2e2',
         labels: [
@@ -95,16 +97,27 @@ export default function AutoSeatMap({
     // Dynamically import seatmap-canvas
     const initSeatmap = async () => {
       try {
-        const SeatmapCanvasModule = await import('@alisaitteke/seatmap-canvas');
-        const SeatmapCanvas = (SeatmapCanvasModule as any).default || SeatmapCanvasModule;
+        const container = containerRef.current;
+        if (!container) return;
 
-        // Import CSS - load from public folder
+        // Import CSS first - load from public folder
         if (!document.getElementById('seatmap-canvas-styles')) {
           const link = document.createElement('link');
           link.id = 'seatmap-canvas-styles';
           link.rel = 'stylesheet';
           link.href = '/seatmap-canvas.css';
           document.head.appendChild(link);
+        }
+
+        // Wait a bit for CSS to load
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const SeatmapCanvasModule = await import('@alisaitteke/seatmap-canvas');
+        const SeatMapCanvas = (SeatmapCanvasModule as any).default || (SeatmapCanvasModule as any).SeatMapCanvas || SeatmapCanvasModule;
+
+        // Ensure we have a unique ID for the container
+        if (!container.id) {
+          container.id = `seatmap-container-${Date.now()}`;
         }
 
         // Configuration for seatmap-canvas
@@ -131,36 +144,70 @@ export default function AutoSeatMap({
           },
         };
 
-        // Create seatmap instance
-        const seatmap = new SeatmapCanvas(containerRef.current, config);
+        // Create seatmap instance - use element directly or selector
+        // Try element first, fallback to selector
+        let seatmap;
+        try {
+          seatmap = new SeatMapCanvas(container, config);
+        } catch (e) {
+          // If element doesn't work, try selector
+          seatmap = new SeatMapCanvas(`#${container.id}`, config);
+        }
 
         // Convert event data to seatmap format
         const seatmapData = convertEventToSeatmapData();
+        
+        console.log('Seatmap data:', JSON.stringify(seatmapData, null, 2));
+        console.log('Number of blocks:', seatmapData.blocks.length);
+        console.log('Total seats:', seatmapData.blocks.reduce((sum, b) => sum + b.seats.length, 0));
+
+        // Wait a bit for the instance to fully initialize
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         // Set the data (automatically generates all seats)
-        // The library automatically renders all seats from the blocks data
-        if (seatmap.data && seatmap.data.replaceData) {
-          seatmap.data.replaceData(seatmapData.blocks);
-        } else if (seatmap.setData) {
-          // Fallback to setData if replaceData not available
-          seatmap.setData(seatmapData);
+        // According to docs, setData expects { blocks: [...] }
+        try {
+          if (typeof seatmap.setData === 'function') {
+            console.log('Using setData method');
+            seatmap.setData(seatmapData);
+          } else if (seatmap.data && typeof seatmap.data.replaceData === 'function') {
+            console.log('Using data.replaceData method');
+            seatmap.data.replaceData(seatmapData.blocks);
+          } else {
+            console.warn('Available methods:', Object.keys(seatmap));
+            console.warn('Data model:', seatmap.data);
+            // Try alternative: directly setting data.blocks
+            if (seatmap.data) {
+              seatmap.data.blocks = seatmapData.blocks;
+              console.log('Set blocks directly on data model');
+            }
+          }
+        } catch (error) {
+          console.error('Error setting seatmap data:', error);
+          throw error;
         }
 
         // Handle seat clicks
-        seatmap.addEventListener('seat_click', (seat: any) => {
-          if (seat.custom_data) {
-            onSeatClick(
-              seat.custom_data.sectionId,
-              seat.custom_data.row,
-              seat.custom_data.seat
-            );
-          }
-        });
+        if (seatmap.addEventListener) {
+          seatmap.addEventListener('seat_click', (seat: any) => {
+            if (seat && seat.custom_data) {
+              onSeatClick(
+                seat.custom_data.sectionId,
+                seat.custom_data.row,
+                seat.custom_data.seat
+              );
+            }
+          });
+        }
 
         seatmapInstanceRef.current = seatmap;
         setIsLoaded(true);
-      } catch (error) {
-        console.error('Error initializing seatmap-canvas:', error);
+        setLoading(false);
+        setError(null);
+      } catch (err: any) {
+        console.error('Error initializing seatmap-canvas:', err);
+        setError(err?.message || 'Failed to initialize seatmap');
+        setLoading(false);
       }
     };
 
@@ -212,6 +259,27 @@ export default function AutoSeatMap({
         </p>
       </div>
 
+      {/* Loading state */}
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
+          <div className="text-center">
+            <div className="text-lg font-semibold mb-2">Loading seatmap...</div>
+            <div className="text-sm text-gray-600">Initializing interactive seatmap with {totalSeats} seats</div>
+          </div>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-red-50 z-10">
+          <div className="text-center p-8">
+            <div className="text-lg font-semibold text-red-600 mb-2">Error loading seatmap</div>
+            <div className="text-sm text-red-500 mb-4">{error}</div>
+            <div className="text-xs text-gray-600">Check the browser console for more details</div>
+          </div>
+        </div>
+      )}
+
       {/* Seatmap container - full screen */}
       <div
         ref={containerRef}
@@ -220,6 +288,8 @@ export default function AutoSeatMap({
           minHeight: '100vh',
           width: '100%',
           paddingTop: '120px', // Space for header
+          position: 'relative',
+          display: loading || error ? 'none' : 'block',
         }}
       />
     </div>
