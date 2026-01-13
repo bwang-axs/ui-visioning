@@ -1,5 +1,5 @@
 import { Event } from '@/lib/types';
-import { generateSeats, stadiumSectionPositions } from './stadiumLayout';
+import { generateSeats, stadiumSectionPositions, graySections } from './stadiumLayout';
 
 // Helper to create a section
 function createSection(
@@ -10,11 +10,15 @@ function createSection(
   seatsPerRow: number,
   availabilityRatio: number = 0.8
 ) {
+  // Override availability for gray sections
+  const isGray = graySections.has(name);
+  const finalAvailability = isGray ? 0.3 : availabilityRatio;
+  
   return {
     id,
     name,
     price,
-    rows: generateSeats(id, name, numRows, seatsPerRow, price, availabilityRatio),
+    rows: generateSeats(id, name, numRows, seatsPerRow, price, finalAvailability),
     position: stadiumSectionPositions[name] || { x: 50, y: 50 },
   };
 }

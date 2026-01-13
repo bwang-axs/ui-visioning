@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Event } from '@/lib/types';
-import { stadiumSectionPositions } from '@/lib/data/stadiumLayout';
+import { stadiumSectionPositions, graySections } from '@/lib/data/stadiumLayout';
 
 interface InteractiveSeatMapProps {
   event: Event;
@@ -151,6 +151,7 @@ export default function InteractiveSeatMap({
     const showAsBox = scale < ZOOM_TRANSITION;
     const showSeats = scale >= ZOOM_TRANSITION;
     const isFocused = focusedSectionId === section.id;
+    const isGraySection = graySections.has(section.name);
     
     // Calculate opacity and scale based on zoom
     const sectionScale = isFocused && showSeats 
@@ -163,6 +164,18 @@ export default function InteractiveSeatMap({
 
     if (showSeats && !isFocused && scale > ZOOM_TRANSITION + 1) {
       return null; // Hide other sections when fully zoomed
+    }
+
+    // Determine section color - gray sections should always be light gray
+    let sectionColorClass = '';
+    if (isGraySection) {
+      sectionColorClass = 'border-gray-400 bg-gray-300 text-gray-700 hover:bg-gray-400';
+    } else if (availability.ratio > 0.5) {
+      sectionColorClass = 'border-blue-500 bg-blue-500 text-white hover:bg-blue-600';
+    } else if (availability.ratio > 0) {
+      sectionColorClass = 'border-orange-500 bg-orange-500 text-white hover:bg-orange-600';
+    } else {
+      sectionColorClass = 'border-gray-400 bg-gray-400 text-gray-600 cursor-not-allowed';
     }
 
     return (
@@ -179,20 +192,18 @@ export default function InteractiveSeatMap({
         }}
       >
         {showAsBox ? (
-          // Render as clickable box
+          // Render as clickable box - smaller for better stadium view
           <button
             onClick={() => handleSectionClick(section.id)}
-            className={`border-2 px-3 py-2 rounded transition-all hover:scale-110 min-w-[80px] ${
-              availability.ratio > 0.5
-                ? 'border-blue-500 bg-blue-100 hover:bg-blue-200'
-                : availability.ratio > 0
-                ? 'border-orange-500 bg-orange-100 hover:bg-orange-200'
-                : 'border-gray-400 bg-gray-300 cursor-not-allowed'
-            }`}
+            className={`border-2 px-2 py-1 rounded transition-all hover:scale-110 ${sectionColorClass}`}
+            style={{
+              minWidth: '50px',
+              fontSize: '10px',
+              padding: '4px 8px',
+            }}
           >
             <div className="text-center">
-              <p className="font-semibold text-xs">{section.name}</p>
-              <p className="text-xs mt-1">${section.price}</p>
+              <p className="font-semibold text-[10px] leading-tight">{section.name}</p>
             </div>
           </button>
         ) : showSeats && isFocused ? (
@@ -282,15 +293,16 @@ export default function InteractiveSeatMap({
           overflow: 'hidden',
         }}
       >
-        {/* Stage - only show at low zoom */}
+        {/* Stage - positioned on right side as background */}
         {scale < ZOOM_TRANSITION && (
           <div
-            className="absolute border-4 border-gray-700 bg-gray-800 text-white flex items-center justify-center font-bold text-xl"
+            className="absolute border-4 border-gray-700 bg-gray-800 text-white flex items-center justify-center font-bold text-xl z-0"
             style={{
-              right: '15%',
-              bottom: '20%',
-              width: '300px',
-              height: '150px',
+              left: '85%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '250px',
+              height: '180px',
               transition: 'all 0.3s ease-out',
               opacity: Math.max(0, 1 - (scale - 1) * 0.5),
             }}
@@ -311,14 +323,14 @@ export default function InteractiveSeatMap({
           {/* Render all sections */}
           {event.sections.map((section, index) => renderSectionBox(section, index))}
 
-          {/* Mezzanine Labels - only at low zoom */}
+          {/* Mezzanine Labels - positioned accurately */}
           {scale < ZOOM_TRANSITION && (
             <>
               <div
-                className="absolute text-xs text-gray-600 font-semibold"
+                className="absolute text-[10px] text-gray-600 font-semibold z-10"
                 style={{
-                  top: '15%',
-                  left: '50%',
+                  top: '16%',
+                  left: '45%',
                   transform: 'translateX(-50%)',
                   opacity: Math.max(0, 1 - (scale - 1) * 0.5),
                   transition: 'opacity 0.3s ease-out',
@@ -327,10 +339,10 @@ export default function InteractiveSeatMap({
                 MEZZANINE UPPER
               </div>
               <div
-                className="absolute text-xs text-gray-600 font-semibold"
+                className="absolute text-[10px] text-gray-600 font-semibold z-10"
                 style={{
-                  bottom: '15%',
-                  left: '50%',
+                  top: '82%',
+                  left: '45%',
                   transform: 'translateX(-50%)',
                   opacity: Math.max(0, 1 - (scale - 1) * 0.5),
                   transition: 'opacity 0.3s ease-out',
